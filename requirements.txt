@@ -1,3 +1,5 @@
 openpyxl
 mcp
 psutil
+starlette
+uvicorn

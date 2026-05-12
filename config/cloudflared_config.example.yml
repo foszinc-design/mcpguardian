@@ -1,0 +1,9 @@
+tunnel: mcpguardian
+credentials-file: C:\Users\<USER>\.cloudflared\<TUNNEL_ID>.json
+
+ingress:
+  - hostname: mcpguardian.yourdomain.com
+    service: http://127.0.0.1:8000
+    originRequest:
+      noTLSVerify: false
+  - service: http_status:404
