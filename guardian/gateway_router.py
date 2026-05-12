@@ -16,6 +16,8 @@ from .path_policy import PathPolicyError
 from .preflight_gate import evaluate_gate, load_active_rules
 from .schemas import Decision, GateRequest, InputFile
 from .structured_trace import RunContext
+from .tools import NativeToolRegistry
+from .tools.common import ToolContext
 
 
 BLOCKING_DECISIONS = {Decision.BLOCK.value, Decision.REQUIRE_ARTIFACT.value}
@@ -52,6 +54,7 @@ class GatewayRouter:
             backend.name: AsyncStdioBackendClient(backend) for backend in config.backends if not backend.disabled
         }
         self.tool_index: dict[str, tuple[str, str]] = {}
+        self.native_tools = NativeToolRegistry()
         self.internal_tools = {"mcpguardian_gateway_status"}
         self._initialized = False
 
@@ -80,6 +83,11 @@ class GatewayRouter:
                 "inputSchema": {"type": "object", "properties": {}},
             }
         ]
+        for tool in self.native_tools.list_tools():
+            cloned = dict(tool)
+            desc = str(cloned.get("description") or "")
+            cloned["description"] = f"[MCPGuardian native] {desc}".strip()
+            out.append(cloned)
         for backend_name, client in self.clients.items():
             for tool in await client.list_tools():
                 cloned = dict(tool)
@@ -95,6 +103,8 @@ class GatewayRouter:
         await self.initialize()
         if public_name == "mcpguardian_gateway_status":
             return self.gateway_status_tool_result()
+        if self.native_tools.has(public_name):
+            return await self._call_native_tool(public_name, arguments or {})
         if public_name not in self.tool_index:
             return self._mcp_tool_error(f"Unknown gateway tool: {public_name}", code="UNKNOWN_TOOL")
         backend_name, backend_tool_name = self.tool_index[public_name]
@@ -131,7 +141,44 @@ class GatewayRouter:
             writer.run_finished(status="error", summary=str(exc))
             return self._mcp_tool_error(str(exc), code="BACKEND_CALL_FAILED", data={"run_id": run.run_id})
 
-    def _evaluate_policy(self, run: RunContext, *, backend_name: str, tool_name: str, requested_action: str):
+
+    async def _call_native_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        run = RunContext(self.config.paths.runs_dir)
+        writer = run.writer()
+        requested_action = f"mcp backend=native tool={tool_name} args={json.dumps(arguments, ensure_ascii=False, sort_keys=True)}"
+        command = str(arguments.get("command") or "") if isinstance(arguments, dict) else ""
+        try:
+            self._enforce_argument_paths(arguments)
+            writer.run_started(task_type="mcp_tool_call", requested_action=requested_action, input_files=[])
+            decision = self._evaluate_policy(
+                run,
+                backend_name="native",
+                tool_name=tool_name,
+                requested_action=requested_action,
+                extra_context={"command": command},
+            )
+            writer.preflight_evaluated(decision.to_dict())
+            if decision.decision in BLOCKING_DECISIONS:
+                writer.run_finished(status="blocked", summary=f"gateway blocked native/{tool_name}")
+                return self._mcp_tool_error(
+                    f"MCPGuardian blocked native tool call {tool_name}: {decision.decision}",
+                    code="POLICY_BLOCKED",
+                    data={"run_id": run.run_id, "decision": decision.to_dict()},
+                )
+            writer.emit("native_tool_call_started", tool=tool_name)
+            ctx = ToolContext(policy=self.config.paths.policy(), run_dir=run.run_dir, writer=writer, root=self.config.paths.root)
+            result = await asyncio.to_thread(self.native_tools.call, tool_name, ctx, arguments)
+            writer.emit("native_tool_call_finished", tool=tool_name, is_error=bool(result.get("isError")))
+            writer.run_finished(status="error" if result.get("isError") else "ok", summary=f"native tool {tool_name}")
+            return result
+        except PathPolicyError as exc:
+            writer.run_finished(status="blocked", summary=str(exc))
+            return self._mcp_tool_error(str(exc), code="PATH_POLICY_DENIED", data={"run_id": run.run_id})
+        except Exception as exc:
+            writer.run_finished(status="error", summary=str(exc))
+            return self._mcp_tool_error(str(exc), code="NATIVE_TOOL_FAILED", data={"run_id": run.run_id})
+
+    def _evaluate_policy(self, run: RunContext, *, backend_name: str, tool_name: str, requested_action: str, extra_context: dict[str, Any] | None = None):
         rules = load_active_rules(self.config.paths.active_rules)
         request = GateRequest(
             task_type="mcp_tool_call",
@@ -139,7 +186,7 @@ class GatewayRouter:
             input_files=[],
             run_dir=str(run.run_dir),
             existing_artifacts=[],
-            context={"mcp_backend": backend_name, "mcp_tool_name": tool_name},
+            context={"mcp_backend": backend_name, "mcp_tool_name": tool_name, **(extra_context or {})},
         )
         return evaluate_gate(request, rules)
 
@@ -166,7 +213,7 @@ class GatewayRouter:
         return {name: client.health() for name, client in sorted(self.clients.items())}
 
     def gateway_status_tool_result(self) -> dict[str, Any]:
-        payload = {"ok": True, "backends": self.backend_status()}
+        payload = {"ok": True, "backends": self.backend_status(), "native_tools": sorted(self.native_tools._tools)}
         return {
             "content": [
                 {

@@ -34,6 +34,8 @@ SUPPORTED_CONDITION_KEYS = {
     "mcp_backend_any",
     "mcp_tool_name",
     "mcp_tool_name_any",
+    "command_contains_any",
+    "command_regex_any",
 }
 
 
@@ -156,6 +158,19 @@ def _condition_matches(rule: Rule, request: GateRequest) -> bool:
     if "mcp_tool_name_any" in cond:
         allowed_tools = {str(item) for item in cond["mcp_tool_name_any"]}
         if str(context.get("mcp_tool_name")) not in allowed_tools:
+            return False
+
+    command_text = str(context.get("command") or request.requested_action or "")
+    if "command_contains_any" in cond:
+        needles = [str(item) for item in cond["command_contains_any"]]
+        if not _any_text_match(needles, command_text):
+            return False
+
+    if "command_regex_any" in cond:
+        import re
+
+        patterns = [str(item) for item in cond["command_regex_any"]]
+        if not any(re.search(pattern, command_text, flags=re.I) for pattern in patterns):
             return False
 
     return True

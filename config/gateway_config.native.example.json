@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "security_boundary": "Native tool mode. Claude Desktop should expose only mcp-guardian. External Windows-MCP and filesystem servers can be removed after validation.",
+  "enable_rule_mutation": false,
+  "paths": {
+    "runs_dir": "runs",
+    "active_rules": "config/active_rules.json",
+    "pending_rules": "config/pending_rules.json",
+    "rule_history": "config/rule_history.jsonl"
+  },
+  "allowed_roots": [
+    "."
+  ],
+  "gateway": {
+    "tool_separator": "__",
+    "default_tool_timeout_seconds": 30,
+    "native_tools": true,
+    "note": "Native guardian_* tools are always exposed by GatewayRouter. Backends may be empty for zero external MCP server mode."
+  },
+  "backends": {}
+}

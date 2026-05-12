@@ -195,7 +195,8 @@ class AsyncStdioBackendClient:
                 self.metrics.requests_total += 1
                 result = await self._request_once(method, params or {})
                 self.metrics.requests_ok += 1
-                self.circuit_breaker.record_success()
+                if method == "tools/call":
+                    self.circuit_breaker.record_success()
                 return result
             except BackendTimeout as exc:
                 self.metrics.timeouts += 1
@@ -214,6 +215,11 @@ class AsyncStdioBackendClient:
                     await self.restart(reason=f"failure:{method}:{type(exc).__name__}")
             if attempt >= max_attempts:
                 break
+            if method == "tools/call" and self.is_running and not self._initialized:
+                try:
+                    await self.initialize()
+                except Exception as init_exc:
+                    last_exc = init_exc
             self.metrics.retries += 1
             await asyncio.sleep(policy.delay_for_attempt(attempt))
         assert last_exc is not None
@@ -238,7 +244,8 @@ class AsyncStdioBackendClient:
             self._pending.pop(message_id, None)
             raise
         try:
-            msg = await asyncio.wait_for(fut, timeout=self.config.timeout_seconds)
+            timeout_seconds = max(self.config.timeout_seconds, 5.0) if method in {"initialize", "tools/list"} else self.config.timeout_seconds
+            msg = await asyncio.wait_for(fut, timeout=timeout_seconds)
         except asyncio.TimeoutError as exc:
             self._pending.pop(message_id, None)
             raise BackendTimeout(f"Backend {self.config.name} timed out on {method}") from exc
@@ -284,10 +291,11 @@ class AsyncStdioBackendClient:
         self._stderr_task = None
 
     async def _read_stdout_loop(self) -> None:
-        assert self.process is not None and self.process.stdout is not None
+        process = self.process
+        assert process is not None and process.stdout is not None
         try:
             while True:
-                line = await self.process.stdout.readline()
+                line = await process.stdout.readline()
                 if not line:
                     break
                 self.metrics.stdout_messages += 1
@@ -302,15 +310,17 @@ class AsyncStdioBackendClient:
                     if not fut.done():
                         fut.set_result(msg)
         finally:
-            for fut in self._pending.values():
-                if not fut.done():
-                    fut.set_exception(BackendCrashed(f"Backend stdout closed: {self.config.name}"))
-            self._pending.clear()
+            if self.process is process:
+                for fut in self._pending.values():
+                    if not fut.done():
+                        fut.set_exception(BackendCrashed(f"Backend stdout closed: {self.config.name}"))
+                self._pending.clear()
 
     async def _read_stderr_loop(self) -> None:
-        assert self.process is not None and self.process.stderr is not None
+        process = self.process
+        assert process is not None and process.stderr is not None
         while True:
-            line = await self.process.stderr.readline()
+            line = await process.stderr.readline()
             if not line:
                 break
             self.metrics.stderr_lines += 1

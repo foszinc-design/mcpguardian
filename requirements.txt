@@ -3,3 +3,4 @@ mcp
 psutil
 starlette
 uvicorn
+Pillow
