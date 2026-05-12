@@ -26,6 +26,7 @@ from .file_ops import (
 from .powershell import run_powershell
 from .process_mgr import kill_process, list_processes, start_process
 from .screenshot import screenshot
+from .document_ops import inspect_xlsx, read_docx, inspect_pdf
 
 ToolCallable = Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
 
@@ -177,6 +178,24 @@ def _build_tools() -> list[NativeTool]:
         ),
         NativeTool("guardian_list_processes", "List running processes via psutil.", _schema({"query": {"type": "string"}, "max_results": {"type": "integer", "default": 100}}), list_processes),
         NativeTool("guardian_kill_process", "Terminate a process by PID; use active_rules to gate this in production.", _schema({"pid": {"type": "integer"}, "tree": {"type": "boolean", "default": True}, "timeout": {"type": "number", "default": 5}}, ["pid"]), kill_process, destructive=True),
+        NativeTool(
+            "guardian_inspect_xlsx",
+            "Inspect XLSX/XLSM workbook metadata and sample rows without claiming analytical coverage.",
+            _schema({"path": path_prop, "sample_rows": {"type": "integer", "default": 5}, "scan_all": {"type": "boolean", "default": False}}, ["path"]),
+            inspect_xlsx,
+        ),
+        NativeTool(
+            "guardian_read_docx",
+            "Extract plain text from DOCX document.xml using stdlib zip/xml parsing.",
+            _schema({"path": path_prop, "max_chars": {"type": "integer", "default": 20000}}, ["path"]),
+            read_docx,
+        ),
+        NativeTool(
+            "guardian_inspect_pdf",
+            "Inspect PDF metadata, estimated page count, and conservative text hints. Full PDF text extraction is not claimed.",
+            _schema({"path": path_prop}, ["path"]),
+            inspect_pdf,
+        ),
         NativeTool(
             "guardian_screenshot",
             "Capture a PNG screenshot to an allowed output path. Requires Pillow/ImageGrab and desktop session access.",

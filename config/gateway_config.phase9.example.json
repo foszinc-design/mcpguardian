@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "enable_rule_mutation": false,
+  "paths": {
+    "runs_dir": "runs",
+    "active_rules": "config/active_rules.json",
+    "pending_rules": "config/pending_rules.json",
+    "rule_history": "config/rule_history.jsonl"
+  },
+  "allowed_roots": [
+    ".",
+    "F:\\Projects",
+    "F:\\ChemicalAI"
+  ],
+  "gateway": {
+    "tool_separator": "__",
+    "default_tool_timeout_seconds": 30
+  },
+  "windows_event_guard": {
+    "enabled": true,
+    "debounce_seconds": 8,
+    "pause_backends": ["windows-mcp", "windows_mcp", "native"],
+    "pause_tool_patterns": ["powershell", "screenshot", "clipboard", "app", "windows"],
+    "state_file": "config/windows_event_guard_state.json"
+  },
+  "resilience": {
+    "retry_tool_calls": false,
+    "safe_retry_tools": ["read_*", "search", "echo"],
+    "max_restarts": 3
+  },
+  "backends": {}
+}

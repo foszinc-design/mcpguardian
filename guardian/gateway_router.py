@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +18,7 @@ from .schemas import Decision, GateRequest, InputFile
 from .structured_trace import RunContext
 from .tools import NativeToolRegistry
 from .tools.common import ToolContext
+from .windows_event_guard import WindowsEventGuard, WindowsEventGuardConfig
 
 
 BLOCKING_DECISIONS = {Decision.BLOCK.value, Decision.REQUIRE_ARTIFACT.value}
@@ -31,6 +32,7 @@ class GatewayConfig:
     backends: list[BackendConfig]
     tool_separator: str = "__"
     default_tool_timeout_seconds: float = 30.0
+    windows_event_guard: WindowsEventGuardConfig = field(default_factory=WindowsEventGuardConfig)
 
     @classmethod
     def load(cls, *, root: str | Path | None = None, config_path: str | Path | None = None) -> "GatewayConfig":
@@ -39,11 +41,13 @@ class GatewayConfig:
         gateway = cfg.get("gateway", {}) if isinstance(cfg, dict) else {}
         raw_backends = cfg.get("backends", {}) if isinstance(cfg, dict) else {}
         backends = [BackendConfig.from_dict(name, obj) for name, obj in raw_backends.items()]
+        weg = WindowsEventGuardConfig.from_dict(cfg.get("windows_event_guard", {}) if isinstance(cfg, dict) else {})
         return cls(
             paths=paths,
             backends=backends,
             tool_separator=str(gateway.get("tool_separator", "__")),
             default_tool_timeout_seconds=float(gateway.get("default_tool_timeout_seconds", 30.0)),
+            windows_event_guard=weg,
         )
 
 
@@ -55,7 +59,8 @@ class GatewayRouter:
         }
         self.tool_index: dict[str, tuple[str, str]] = {}
         self.native_tools = NativeToolRegistry()
-        self.internal_tools = {"mcpguardian_gateway_status"}
+        self.event_guard = WindowsEventGuard(config.windows_event_guard, root=config.paths.root)
+        self.internal_tools = {"mcpguardian_gateway_status", "mcpguardian_windows_event_status", "mcpguardian_windows_event_record"}
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -81,6 +86,16 @@ class GatewayRouter:
                 "name": "mcpguardian_gateway_status",
                 "description": "Return MCPGuardian Gateway backend health, circuit breaker, retry, and pressure metrics.",
                 "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "mcpguardian_windows_event_status",
+                "description": "Return Windows Event Guard debounce/pause and drive snapshot status.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "mcpguardian_windows_event_record",
+                "description": "Record a Windows PnP/USB/device event and activate debounce pause when configured.",
+                "inputSchema": {"type": "object", "properties": {"event_type": {"type": "string"}, "device_id": {"type": "string"}}, "required": ["event_type"]},
             }
         ]
         for tool in self.native_tools.list_tools():
@@ -103,6 +118,11 @@ class GatewayRouter:
         await self.initialize()
         if public_name == "mcpguardian_gateway_status":
             return self.gateway_status_tool_result()
+        if public_name == "mcpguardian_windows_event_status":
+            return self._mcp_text_payload(self.event_guard.status())
+        if public_name == "mcpguardian_windows_event_record":
+            args = arguments or {}
+            return self._mcp_text_payload(self.event_guard.record_device_change(event_type=str(args.get("event_type") or "manual_device_event"), device_id=str(args.get("device_id") or "")))
         if self.native_tools.has(public_name):
             return await self._call_native_tool(public_name, arguments or {})
         if public_name not in self.tool_index:
@@ -118,6 +138,11 @@ class GatewayRouter:
             writer.run_started(task_type="mcp_tool_call", requested_action=requested_action, input_files=[])
             decision = self._evaluate_policy(run, backend_name=backend_name, tool_name=backend_tool_name, requested_action=requested_action)
             writer.preflight_evaluated(decision.to_dict())
+            if self.event_guard.should_pause(backend=backend_name, tool_name=backend_tool_name):
+                status = self.event_guard.status()
+                writer.emit("windows_event_guard_paused", backend=backend_name, tool=backend_tool_name, status=status)
+                writer.run_finished(status="blocked", summary="Windows Event Guard pause active")
+                return self._mcp_tool_error("Windows Event Guard pause active", code="WINDOWS_EVENT_GUARD_PAUSED", data={"run_id": run.run_id, "status": status})
             if decision.decision in BLOCKING_DECISIONS:
                 writer.run_finished(status="blocked", summary=f"gateway blocked {backend_name}/{backend_tool_name}")
                 return self._mcp_tool_error(
@@ -158,6 +183,11 @@ class GatewayRouter:
                 extra_context={"command": command},
             )
             writer.preflight_evaluated(decision.to_dict())
+            if self.event_guard.should_pause(backend="native", tool_name=tool_name):
+                status = self.event_guard.status()
+                writer.emit("windows_event_guard_paused", backend="native", tool=tool_name, status=status)
+                writer.run_finished(status="blocked", summary="Windows Event Guard pause active")
+                return self._mcp_tool_error("Windows Event Guard pause active", code="WINDOWS_EVENT_GUARD_PAUSED", data={"run_id": run.run_id, "status": status})
             if decision.decision in BLOCKING_DECISIONS:
                 writer.run_finished(status="blocked", summary=f"gateway blocked native/{tool_name}")
                 return self._mcp_tool_error(
@@ -213,7 +243,11 @@ class GatewayRouter:
         return {name: client.health() for name, client in sorted(self.clients.items())}
 
     def gateway_status_tool_result(self) -> dict[str, Any]:
-        payload = {"ok": True, "backends": self.backend_status(), "native_tools": sorted(self.native_tools._tools)}
+        payload = {"ok": True, "backends": self.backend_status(), "native_tools": sorted(self.native_tools._tools), "windows_event_guard": self.event_guard.status()}
+        return self._mcp_text_payload(payload)
+
+    @staticmethod
+    def _mcp_text_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "content": [
                 {
