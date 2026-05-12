@@ -1,0 +1,103 @@
+{
+  "rules": [
+    {
+      "id": "gateway.block.native.file_mutation.v1",
+      "status": "active",
+      "scope": "gateway",
+      "task_types": ["mcp_tool_call"],
+      "severity": "critical",
+      "enforcement": "block",
+      "condition": {
+        "mcp_backend": "native",
+        "mcp_tool_name_any": [
+          "guardian_write_file",
+          "guardian_edit_file",
+          "guardian_move_file",
+          "guardian_create_directory"
+        ]
+      },
+      "required_artifacts": [],
+      "message": "Native file mutation is blocked by the hardened baseline. Approve a narrower rule before enabling writes.",
+      "created_at": "2026-05-13T00:00:00+09:00",
+      "created_by": "hardened_baseline",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "gateway.block.native.process_kill.v1",
+      "status": "active",
+      "scope": "gateway",
+      "task_types": ["mcp_tool_call"],
+      "severity": "high",
+      "enforcement": "block",
+      "condition": {
+        "mcp_backend": "native",
+        "mcp_tool_name": "guardian_kill_process"
+      },
+      "required_artifacts": [],
+      "message": "Process termination is blocked by the hardened baseline.",
+      "created_at": "2026-05-13T00:00:00+09:00",
+      "created_by": "hardened_baseline",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "gateway.block.dangerous.powershell.v1",
+      "status": "active",
+      "scope": "gateway",
+      "task_types": ["mcp_tool_call"],
+      "severity": "critical",
+      "enforcement": "block",
+      "condition": {
+        "mcp_backend": "native",
+        "mcp_tool_name": "guardian_powershell",
+        "command_regex_any": [
+          "Format-Disk",
+          "Clear-Disk",
+          "Remove-Item\\s+.*-Recurse\\s+.*-Force",
+          "rm\\s+-rf\\s+/",
+          "bcdedit",
+          "Delete\\s+Shadow",
+          "vssadmin\\s+delete",
+          "Set-ExecutionPolicy\\s+Unrestricted"
+        ]
+      },
+      "required_artifacts": [],
+      "message": "Dangerous PowerShell command pattern is blocked.",
+      "created_at": "2026-05-13T00:00:00+09:00",
+      "created_by": "hardened_baseline",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "xlsx.require_sheet_inventory.v1",
+      "status": "active",
+      "scope": "xlsx",
+      "task_types": ["xlsx_analysis", "spreadsheet_review"],
+      "severity": "high",
+      "enforcement": "require_artifact",
+      "condition": {"input_file_ext": [".xlsx", ".xlsm"]},
+      "required_artifacts": ["sheet_inventory.json"],
+      "message": "XLSX 작업은 전체 시트 인벤토리 없이는 분석 결론을 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "report.require_claim_manifest_for_quant.v1",
+      "status": "active",
+      "scope": "markdown",
+      "task_types": ["report_generation", "document_review", "analysis_summary"],
+      "severity": "high",
+      "enforcement": "postcheck_required",
+      "condition": {"contains_quantitative_claim": true},
+      "required_artifacts": ["claim_manifest.json"],
+      "message": "정량 주장을 포함한 보고서는 claim_manifest 없이는 최종 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    }
+  ]
+}
