@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "security_boundary": "Control-plane exposure only. This server does not enforce policy over other MCP servers unless those servers are routed through Guardian Gateway.",
+  "enable_rule_mutation": false,
+  "paths": {
+    "runs_dir": "runs",
+    "active_rules": "config/active_rules.json",
+    "pending_rules": "config/pending_rules.json",
+    "rule_history": "config/rule_history.jsonl"
+  },
+  "allowed_roots": [
+    "."
+  ]
+}

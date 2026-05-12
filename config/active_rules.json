@@ -1,0 +1,73 @@
+{
+  "rules": [
+    {
+      "id": "xlsx.require_sheet_inventory.v1",
+      "status": "active",
+      "scope": "xlsx",
+      "task_types": ["xlsx_analysis", "spreadsheet_review"],
+      "severity": "high",
+      "enforcement": "require_artifact",
+      "condition": {
+        "input_file_ext": [".xlsx", ".xlsm"]
+      },
+      "required_artifacts": ["sheet_inventory.json"],
+      "message": "XLSX 작업은 전체 시트 인벤토리 없이는 분석 결론을 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "xlsx.block_sample_only_global_claim.v1",
+      "status": "active",
+      "scope": "xlsx",
+      "task_types": ["xlsx_analysis", "spreadsheet_review"],
+      "severity": "critical",
+      "enforcement": "postcheck_required",
+      "condition": {
+        "input_file_ext": [".xlsx", ".csv"],
+        "global_claim_keywords": ["전체", "모든", "총", "합계", "전부", "always", "all", "total"]
+      },
+      "required_artifacts": ["row_count_summary.json", "coverage_report.json"],
+      "message": "일부 행만 읽은 상태에서 전체 범위 결론을 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "code.require_change_manifest.v1",
+      "status": "active",
+      "scope": "code",
+      "task_types": ["code_edit", "bugfix", "refactor"],
+      "severity": "high",
+      "enforcement": "require_artifact",
+      "condition": {
+        "requested_actions_any": ["edit", "fix", "refactor", "patch", "수정", "고쳐", "리팩터", "패치"]
+      },
+      "required_artifacts": ["change_manifest.json"],
+      "message": "코드 변경 작업은 변경 파일 목록과 의도 요약 없이는 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    },
+    {
+      "id": "report.require_claim_manifest_for_quant.v1",
+      "status": "active",
+      "scope": "markdown",
+      "task_types": ["report_generation", "document_review", "analysis_summary"],
+      "severity": "high",
+      "enforcement": "postcheck_required",
+      "condition": {
+        "contains_quantitative_claim": true
+      },
+      "required_artifacts": ["claim_manifest.json"],
+      "message": "정량 주장을 포함한 보고서는 claim_manifest 없이는 최종 제출할 수 없다.",
+      "created_at": "2026-05-12T00:00:00+09:00",
+      "created_by": "phase1_seed",
+      "evidence_refs": [],
+      "rollback_of": null
+    }
+  ]
+}

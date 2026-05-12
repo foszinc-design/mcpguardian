@@ -1,0 +1,16 @@
+{
+  "task_profiles": {
+    "xlsx_analysis": {
+      "default_risk": "high",
+      "required_phase1_artifacts": ["input_manifest.json", "sheet_inventory.json"]
+    },
+    "code_edit": {
+      "default_risk": "high",
+      "required_phase1_artifacts": ["change_manifest.json"]
+    },
+    "report_generation": {
+      "default_risk": "medium",
+      "required_phase1_artifacts": []
+    }
+  }
+}
